@@ -16,23 +16,7 @@ Convert PDF, DOCX, PPTX, XLSX, HTML, images, audio, EPUB, CSV, and many other fo
 
 ## Screenshot
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  MarkItDown Converter                                    │
-├──────────────────────────────────────────────────────────┤
-│  Archivos a convertir              Carpeta de destino    │
-│  ┌─────────────────────────┐   ┌────────────────────┐   │
-│  │ 📄 documento.pdf    ✅  │   │ /home/user/docs    │   │
-│  │ 📄 presentacion.pptx ✅  │   │ [  Examinar...  ] │   │
-│  │ 📄 hoja.xlsx        ❌  │   └────────────────────┘   │
-│  └─────────────────────────┘                             │
-│  [+ Añadir]  [✕ Quitar]  [🗑 Limpiar]                    │
-│                                                          │
-│  [═══════════════ Convertir (3 archivos) ════════════]   │
-│  ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░  [2/3]                │
-│  ✅ Convertido: documento.md                             │
-└──────────────────────────────────────────────────────────┘
-```
+![MarkItDown UI](screenshots/captura.png)
 
 ---
 
