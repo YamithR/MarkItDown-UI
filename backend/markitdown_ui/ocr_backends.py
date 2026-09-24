@@ -17,6 +17,9 @@ class OCRBackend(ABC):
     def extract_text(self, image_path: Path) -> str:
         pass
 
+    def priority(self) -> int:
+        return 0
+
     def extract_from_pdf(self, pdf_path: Path, page_num: int) -> str:
         doc = fitz.open(pdf_path)
         try:
@@ -33,26 +36,45 @@ class OCRBackend(ABC):
 
 
 class EasyOCRBackend(OCRBackend):
-    def __init__(self, languages=('en',), gpu=False):
+    def __init__(self, languages=('en',), gpu=False,
+                 model_storage_directory=None, download_enabled=True):
         self._reader = None
         self._languages = languages
         self._gpu = gpu
+        self._model_dir = model_storage_directory
+        self._download_enabled = download_enabled
 
     def _get_reader(self):
         if self._reader is None:
             import easyocr
-            self._reader = easyocr.Reader(list(self._languages), gpu=self._gpu)
+            kwargs = {'gpu': self._gpu}
+            if self._model_dir:
+                kwargs['model_storage_directory'] = self._model_dir
+                kwargs['download_enabled'] = self._download_enabled
+            self._reader = easyocr.Reader(list(self._languages), **kwargs)
         return self._reader
 
     def is_available(self) -> bool:
         try:
             import easyocr
-            return True
         except ImportError:
             return False
+        if self._model_dir:
+            from pathlib import Path
+            md = Path(self._model_dir)
+            if not md.is_dir():
+                return False
+            has_model = any(md.rglob("*.pth")) or any(md.rglob("*.onnx")) \
+                or any(md.rglob("*.yaml")) or any(md.rglob("*.json"))
+            if not has_model:
+                return False
+        return True
 
     def get_name(self) -> str:
         return f"EasyOCR ({', '.join(self._languages)})"
+
+    def priority(self) -> int:
+        return 30
 
     def extract_text(self, image_path: Path) -> str:
         reader = self._get_reader()
@@ -78,6 +100,9 @@ class TesseractBackend(OCRBackend):
     def get_name(self) -> str:
         return f"Tesseract ({self._lang})"
 
+    def priority(self) -> int:
+        return 20
+
     def extract_text(self, image_path: Path) -> str:
         import pytesseract
         from PIL import Image
@@ -95,6 +120,9 @@ class BuiltinBackend(OCRBackend):
 
     def get_name(self) -> str:
         return "MarkItDown Built-in"
+
+    def priority(self) -> int:
+        return 10
 
     def extract_text(self, image_path: Path) -> str:
         result = self._engine.convert(str(image_path))

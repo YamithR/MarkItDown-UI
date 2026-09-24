@@ -1,5 +1,6 @@
 import argparse
 import json
+import locale
 import os
 import sys
 import time
@@ -9,11 +10,12 @@ from markitdown import MarkItDown
 
 from .ocr_manager import OCRManager
 
+VERSION = "2.0.0"
 HISTORY_FILE = Path.home() / ".markitdown-ui" / "history.jsonl"
 
 SUPPORTED_EXTS = {
     ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
-    ".html", ".htm", ".xml", ".csv", ".json", ".epub",
+    ".html", ".htm", ".xml", ".csv", ".json", ".epub", ".txt",
     ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp", ".gif",
     ".wav", ".mp3",
 }
@@ -45,12 +47,26 @@ def _collect_files(paths: list[str], recursive: bool, include_filter: set[str]) 
     return sorted(set(files))
 
 
+def _detect_system_langs() -> list[str]:
+    try:
+        code, _ = locale.getdefaultlocale()
+        if not code:
+            return ["en"]
+        lang = code.split("_")[0].lower()
+        return ["es"] if lang == "es" else ["en"]
+    except Exception:
+        return ["en"]
+
+
 def run_cli(args: argparse.Namespace) -> int:
+    ocr_langs = args.ocr_lang or _detect_system_langs()
     engine = MarkItDown()
     ocr = OCRManager(engine, config={
-        "ocr_languages": args.ocr_lang,
+        "ocr_languages": ocr_langs,
         "ocr_gpu": args.gpu,
+        "ocr_enabled": not args.no_ocr,
     })
+    ocr.auto_select_best()
 
     if args.list_backends:
         for b in ocr.get_all_names():
@@ -90,16 +106,17 @@ def run_cli(args: argparse.Namespace) -> int:
         try:
             result = engine.convert(str(f))
             markdown_out = result.markdown
-            markdown_out = _apply_ocr_if_needed(ocr, f, markdown_out)
+            markdown_out = _apply_ocr_if_needed(ocr, f, markdown_out, args.no_ocr)
             dst.write_text(markdown_out, encoding="utf-8")
             ok += 1
-            used_ocr = active is not None and not active.get_name().startswith("MarkItDown")
+            used_ocr = active is not None and not active.get_name().startswith("MarkItDown") and not args.no_ocr
             _log_entry({
                 "ts": time.time(),
                 "file": str(f),
                 "out": str(dst),
                 "status": "ok",
                 "ocr": used_ocr,
+                "langs": ocr_langs,
             })
         except Exception as exc:
             err += 1
@@ -111,9 +128,9 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0 if err == 0 else 1
 
 
-def _apply_ocr_if_needed(ocr, f: Path, markdown_out: str) -> str:
+def _apply_ocr_if_needed(ocr, f: Path, markdown_out: str, disabled: bool = False) -> str:
     active = ocr.get_active()
-    if active is None or active.get_name().startswith("MarkItDown"):
+    if disabled or active is None or active.get_name().startswith("MarkItDown"):
         return markdown_out
     if f.suffix.lower() in IMAGE_LIKE:
         text = active.extract_text(f)
@@ -128,29 +145,30 @@ IMAGE_LIKE = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp", ".gif"}
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="markitdown-ui",
-        description="Offline file-to-Markdown converter with OCR (GUI or CLI)",
+        description="Offline file-to-Markdown converter with OCR (CLI or JSONL server)",
     )
     parser.add_argument("paths", nargs="*", help="Files or folders to convert")
-    parser.add_argument("--gui", action="store_true", help="Launch the graphical interface")
+    parser.add_argument("--server", action="store_true",
+                        help="JSONL server mode (used by the Electron UI)")
     parser.add_argument("-o", "--output", help="Destination folder (default: current dir)")
     parser.add_argument("-r", "--recursive", action="store_true", help="Scan folders recursively")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing .md files")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be converted")
     parser.add_argument("--include", nargs="*", help="Only these extensions (e.g. pdf docx)")
-    parser.add_argument("--ocr-lang", nargs="*", default=["en"], help="OCR languages")
+    parser.add_argument("--ocr-lang", nargs="*", default=None, help="OCR languages (default: auto from system locale)")
+    parser.add_argument("--no-ocr", action="store_true", help="Disable OCR (default: enabled)")
     parser.add_argument("--backend", help="OCR backend name (see --list-backends)")
     parser.add_argument("--list-backends", action="store_true", help="List available OCR backends")
     parser.add_argument("--gpu", action="store_true", help="Use GPU for EasyOCR if available")
-    parser.add_argument("-v", "--version", action="version", version="markitdown-ui 1.2.0")
+    parser.add_argument("-v", "--version", action="version", version=f"markitdown-ui {VERSION}")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.gui or (not args.paths and not args.list_backends):
-        from .gui import main as gui_main
-        gui_main()
-        return 0
+    if args.server:
+        from .server import run_server
+        return run_server()
     return run_cli(args)
 
 
