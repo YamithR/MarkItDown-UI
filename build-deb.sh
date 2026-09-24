@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PACKAGE="markitdown-gui"
-VERSION="1.0.0"
+VERSION="1.2.0"
 ARCH="all"
 BUILD_ROOT="$(mktemp -d)"
 DEB_DIR="$BUILD_ROOT/${PACKAGE}_${VERSION}_${ARCH}"
@@ -36,13 +36,15 @@ draw.text((tx, ty), 'M', fill='white', font=font)
 img.save('$DEB_DIR/usr/share/pixmaps/markitdown-gui.png')
 "
 
-echo "==> Copiando gui.py..."
-cp src/markitdown_ui/gui.py "$DEB_DIR/usr/lib/markitdown-gui/gui.py"
+echo "==> Copiando paquete markitdown_ui..."
+cp -r src/markitdown_ui "$DEB_DIR/usr/lib/markitdown-gui/markitdown_ui"
+rm -f "$DEB_DIR"/usr/lib/markitdown-gui/markitdown_ui/__pycache__ -r
 
 echo "==> Creando wrapper /usr/bin/markitdown-gui..."
 cat > "$DEB_DIR/usr/bin/markitdown-gui" << 'WRAPPER'
 #!/bin/sh
-exec python3 /usr/lib/markitdown-gui/gui.py "$@"
+export PYTHONPATH=/usr/lib/markitdown-gui
+exec python3 -m markitdown_ui "$@"
 WRAPPER
 chmod +x "$DEB_DIR/usr/bin/markitdown-gui"
 
@@ -85,12 +87,20 @@ set -e
 case "$1" in
     configure)
         echo "markitdown-gui: Instalando dependencias de Python..."
-        PIP_CMD="/usr/bin/pip3 install \"markitdown[all]\" --break-system-packages"
+        PIP_CMD="/usr/bin/pip3 install 'markitdown[all]' 'PyMuPDF>=1.23.0' 'Pillow>=10.0.0' 'pytesseract>=0.3.10' 'tkinterdnd2>=0.3.0' --break-system-packages"
         if eval "$PIP_CMD" 2>&1; then
             echo "markitdown-gui: Dependencias instaladas correctamente."
         else
             echo "markitdown-gui: Advertencia - no se pudieron instalar las dependencias automaticamente."
             echo "markitdown-gui: Ejecuta manualmente: $PIP_CMD"
+        fi
+        if command -v tesseract >/dev/null 2>&1; then
+            echo "markitdown-gui: tesseract detectado - OCR Tesseract disponible."
+        else
+            echo "markitdown-gui: tesseract no instalado. Para OCR Tesseract:"
+            echo "markitdown-gui:   sudo apt install tesseract-ocr"
+            echo "markitdown-gui: Para OCR EasyOCR de alta calidad (offline):"
+            echo "markitdown-gui:   sudo apt install python3-pil && pip3 install easyocr torch torchvision"
         fi
         ;;
 esac
