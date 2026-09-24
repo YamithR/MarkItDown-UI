@@ -1,0 +1,105 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      bundle_easyocr:
+        description: "Bundle EasyOCR models into Windows exe (slow, ~2GB)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build .deb (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev python3-pil
+          python -m pip install --upgrade pip
+
+      - name: Build .deb package
+        run: bash build-deb.sh
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/*.deb
+          if-no-files-found: error
+
+  build-windows:
+    name: Build .exe (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install "markitdown[all]" PyMuPDF Pillow pytesseract tkinterdnd2
+
+      - name: Pre-download EasyOCR models (optional)
+        if: github.event.inputs.bundle_easyocr == 'true'
+        run: |
+          python -m pip install easyocr torch torchvision
+          python -c "import easyocr; easyocr.Reader(['en'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
+          echo "EASYOCR_BUNDLED=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build executable
+        run: python -m PyInstaller --noconfirm --clean markitdown-ui.spec
+
+      - name: Rename artifact with version
+        shell: bash
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+          cp dist/markitdown-ui.exe "dist/markitdown-ui-${VERSION}-windows.exe"
+
+      - name: Upload .exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-package
+          path: dist/*windows.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/deb-package/*.deb
+            artifacts/exe-package/*.exe
+          generate_release_notes: true
