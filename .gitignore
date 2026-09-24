@@ -5,3 +5,11 @@ __pycache__/
 build/
 *.swp
 .DS_Store
+
+# PyInstaller artifacts
+dist/markitdown-ui
+dist/markitdown-ui.exe
+*.spec.bak
+
+# EasyOCR pre-downloaded models (fetched at build time)
+assets/easyocr_models/
