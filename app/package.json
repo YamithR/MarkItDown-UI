@@ -2,6 +2,11 @@
   "name": "markitdown-ui",
   "version": "2.0.0",
   "description": "Offline file-to-Markdown converter with OCR",
+  "homepage": "https://github.com/YamithR/MarkItDown-UI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YamithR/MarkItDown-UI.git"
+  },
   "main": "main.js",
   "author": "Yamith Romero",
   "license": "MIT",
