@@ -5,7 +5,9 @@ import threading
 
 from markitdown import MarkItDown, UnsupportedFormatException
 
-VERSION = "1.0.0"
+from .ocr_manager import OCRManager
+
+VERSION = "1.1.0"
 
 STATUS_PENDING = "\u2b1c"
 STATUS_CONVERTING = "\u23f3"
@@ -50,6 +52,14 @@ LANG = {
         "completed_ok": "{} file{} converted.\nOpen destination folder?",
         "completed_ok_plural": "s",
         "open_folder": "Open destination folder?",
+        "ocr_section": "OCR (offline)",
+        "ocr_backend": "Backend:",
+        "ocr_lang": "Languages:",
+        "ocr_enabled": "Enable OCR for scanned files",
+        "ocr_detecting": "Checking for scanned pages...",
+        "ocr_scan": "OCR reading text...",
+        "status_ocr_fallback": "{} - scanned, OCR applied",
+        "warn_ocr_none": "No OCR backend available.\nInstall: easyocr, pytesseract, or system tesseract.",
     },
     "es": {
         "title": "MarkItDown Converter",
@@ -89,6 +99,14 @@ LANG = {
         "completed_ok": "{} archivo{} convertido{}.\n\u00bfAbrir carpeta de destino?",
         "completed_ok_plural": "s",
         "open_folder": "\u00bfAbrir carpeta de destino?",
+        "ocr_section": "OCR (sin conexi\u00f3n)",
+        "ocr_backend": "Motor:",
+        "ocr_lang": "Idiomas:",
+        "ocr_enabled": "Activar OCR para archivos escaneados",
+        "ocr_detecting": "Comprobando p\u00e1ginas escaneadas...",
+        "ocr_scan": "OCR leyendo texto...",
+        "status_ocr_fallback": "{} - escaneado, OCR aplicado",
+        "warn_ocr_none": "Ning\u00fan backend OCR disponible.\nInstala: easyocr, pytesseract o tesseract del sistema.",
     },
 }
 
@@ -99,6 +117,10 @@ class FileItem:
         self.name = os.path.basename(path)
         self.status = STATUS_PENDING
         self.output_name = os.path.splitext(os.path.basename(path))[0] + ".md"
+        self.ocr_applied = False
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp", ".gif"}
 
 
 class MarkItDownGUI:
@@ -108,7 +130,12 @@ class MarkItDownGUI:
         self.root.geometry("720x540")
         self.root.minsize(600, 400)
         self._engine = MarkItDown()
+        self._ocr = OCRManager(self._engine)
         self.lang = tk.StringVar(value="en")
+        self.ocr_enabled = tk.BooleanVar(value=True)
+        self.ocr_lang = tk.StringVar(value="en")
+        self.ocr_backend = tk.StringVar()
+        self.ocr_info = tk.StringVar()
 
         self.files: list[FileItem] = []
         self.output_dir = tk.StringVar()
@@ -117,6 +144,7 @@ class MarkItDownGUI:
         self._style_ui()
         self._build_ui()
         self._apply_language()
+        self._prepare_ocr()
         self._center_window()
 
     def _tr(self, key: str, *args: str) -> str:
@@ -124,6 +152,13 @@ class MarkItDownGUI:
         if args:
             return s.format(*args)
         return s
+
+    @staticmethod
+    def _set_label_text(widget, text: str) -> None:
+        try:
+            widget.configure(text=text)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Theme / style
@@ -240,6 +275,36 @@ class MarkItDownGUI:
         )
         self.summary_lbl.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
 
+        # -- OCR section ----------------------------------------------------------
+        self.ocr_frame = ttk.LabelFrame(right, text="OCR (offline)", padding=8)
+        self.ocr_frame.grid(row=4, column=0, columnspan=2, sticky=tk.EW, pady=(16, 0))
+        self.ocr_frame.columnconfigure(1, weight=1)
+
+        self.ocr_check = ttk.Checkbutton(
+            self.ocr_frame, text="Enable OCR for scanned files",
+            variable=self.ocr_enabled, command=self._update_ocr_state
+        )
+        self.ocr_check.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 6))
+
+        ttk.Label(self.ocr_frame, text="Backend:", style="Status.TLabel").grid(
+            row=1, column=0, sticky=tk.W, padx=(0, 4)
+        )
+        self.ocr_backend_combo = ttk.Combobox(
+            self.ocr_frame, textvariable=self.ocr_backend,
+            state="readonly", width=22
+        )
+        self.ocr_backend_combo.grid(row=1, column=1, sticky=tk.EW)
+        self.ocr_backend_combo.bind("<<ComboboxSelected>>", self._on_backend_change)
+
+        ttk.Label(self.ocr_frame, text="Languages:", style="Status.TLabel").grid(
+            row=2, column=0, sticky=tk.W, padx=(0, 4), pady=(4, 0)
+        )
+        self.ocr_lang_entry = ttk.Entry(self.ocr_frame, textvariable=self.ocr_lang, width=22)
+        self.ocr_lang_entry.grid(row=2, column=1, sticky=tk.EW, pady=(4, 0))
+
+        ttk.Label(self.ocr_frame, textvariable=self.ocr_info, style="Status.TLabel",
+                  foreground="#888").grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+
         # -- Convert button -------------------------------------------------------
         self.convert_btn = ttk.Button(
             outer, text="Convert to Markdown", style="Convert.TButton",
@@ -273,6 +338,8 @@ class MarkItDownGUI:
         self.btn_clear.configure(text=self._tr("btn_clear"))
         self.btn_browse.configure(text=self._tr("btn_browse"))
         self.convert_btn.configure(text=self._tr("convert_btn"))
+        self.ocr_check.configure(text=self._tr("ocr_enabled"))
+        self._set_label_text(self.ocr_frame, self._tr("ocr_section"))
         if not self.files:
             self.status_text.set(self._tr("status_ready"))
         self._refresh_tree()
@@ -338,6 +405,69 @@ class MarkItDownGUI:
             self.output_dir.set(path)
 
     # ------------------------------------------------------------------
+    # OCR management
+    # ------------------------------------------------------------------
+    def _refresh_ocr_backends(self) -> None:
+        names = self._ocr.get_all_names()
+        self.ocr_backend_combo["values"] = names
+        if names:
+            active = self._ocr.get_active()
+            if active:
+                self.ocr_backend.set(active.get_name())
+            else:
+                self.ocr_backend.set(names[0])
+            self._on_backend_change()
+        else:
+            self.ocr_info.set(self._tr("warn_ocr_none"))
+
+    def _on_backend_change(self, _event=None) -> None:
+        name = self.ocr_backend.get()
+        if name:
+            self._ocr.set_active(name)
+            self.ocr_info.set(f"{name} | {self.ocr_lang.get()}")
+
+    def _update_ocr_state(self) -> None:
+        state = "normal" if self.ocr_enabled.get() else "disabled"
+        self.ocr_backend_combo.configure(state=state)
+        self.ocr_lang_entry.configure(state=state)
+
+    def _prepare_ocr(self) -> None:
+        langs = [l.strip() for l in self.ocr_lang.get().split(",") if l.strip()] or ["en"]
+        self._ocr.config = {
+            "ocr_languages": langs,
+            "ocr_gpu": False,
+            "tesseract_lang": langs[0],
+        }
+        self._ocr._init_backends()
+        self._refresh_ocr_backends()
+
+    def _needs_ocr(self, path: str) -> bool:
+        ext = os.path.splitext(path)[1].lower()
+        return ext in IMAGE_EXTS or ext == ".pdf"
+
+    def _ocr_image_to_markdown(self, path: str) -> str:
+        backend = self._ocr.get_active()
+        if backend is None:
+            return ""
+        text = backend.extract_text(path)
+        return f"*[Image OCR]\n{text}\n[End OCR]*"
+
+    def _pdf_is_scanned(self, path: str) -> bool:
+        try:
+            import fitz
+            doc = fitz.open(path)
+            total_chars = 0
+            for idx, page in enumerate(doc):
+                total_chars += len(page.get_text().strip())
+                if total_chars > 100:
+                    doc.close()
+                    return False
+            doc.close()
+            return total_chars <= 100
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
     # Convert
     # ------------------------------------------------------------------
     def _set_busy(self, busy: bool) -> None:
@@ -395,8 +525,49 @@ class MarkItDownGUI:
 
             try:
                 result = self._engine.convert(f.path)
+                markdown_out = result.markdown
+
+                if self.ocr_enabled.get() and self._needs_ocr(f.path):
+                    ext = os.path.splitext(f.path)[1].lower()
+                    if ext in IMAGE_EXTS:
+                        self.root.after(
+                            0,
+                            lambda fi=f, i=idx: update_status(
+                                fi, STATUS_CONVERTING, i, self._tr("ocr_scan", fi.name)
+                            ),
+                        )
+                        ocr_text = self._ocr_image_to_markdown(f.path)
+                        if ocr_text:
+                            markdown_out = ocr_text + "\n\n" + markdown_out
+                    elif ext == ".pdf" and self._pdf_is_scanned(f.path):
+                        self.root.after(
+                            0,
+                            lambda fi=f, i=idx: update_status(
+                                fi, STATUS_CONVERTING, i, self._tr("ocr_detecting", fi.name)
+                            ),
+                        )
+                        import fitz
+                        doc = fitz.open(f.path)
+                        pages_md = []
+                        for pg in range(len(doc)):
+                            self.root.after(
+                                0,
+                                lambda fi=f, i=idx, p=pg: update_status(
+                                    fi, STATUS_CONVERTING, i,
+                                    self._tr("ocr_scan", f"{fi.name} (p{p + 1})")
+                                ),
+                            )
+                            pages_md.append(self._ocr.extract_pdf_page_text(f.path, pg))
+                        doc.close()
+                        if any(pages_md):
+                            markdown_out = "\n\n".join(
+                                f"## Page {i + 1}\n\n{text}"
+                                for i, text in enumerate(pages_md) if text.strip()
+                            )
+                            f.ocr_applied = True
+
                 with open(dst, "w", encoding="utf-8") as fh:
-                    fh.write(result.markdown)
+                    fh.write(markdown_out)
                 ok_count += 1
                 self.root.after(
                     0,
