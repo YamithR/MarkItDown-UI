@@ -9,7 +9,7 @@
 # (SPECPATH makes dist/build land in backend/, paths are CWD-independent)
 import os
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 block_cipher = None
 
@@ -28,14 +28,22 @@ try:
     easyocr_datas = collect_data_files('easyocr')
     easyocr_hiddenimports = ['easyocr', 'torch', 'torchvision'] + \
         collect_submodules('easyocr')
+    # torchvision 0.29 renamed its C extension to _C_stable.so/image_stable.so
+    # (hook-torchvision still references the old torchvision._C name, which is
+    # a no-op). Without these .so the ops (nms, etc.) are never registered and
+    # runtime fails with "operator torchvision::nms does not exist".
+    torchvision_binaries = collect_dynamic_libs('torchvision')
+    torchvision_hiddenimports = ['torchvision._C_stable', 'torchvision.image_stable']
 except Exception:
     easyocr_datas = []
     easyocr_hiddenimports = []
+    torchvision_binaries = []
+    torchvision_hiddenimports = []
 
 a = Analysis(
     [os.path.join(ROOT, 'entrypoint.py')],
     pathex=[SPECPATH],
-    binaries=[],
+    binaries=torchvision_binaries,
     datas=magika_datas + markitdown_datas + easyocr_datas,
     hiddenimports=[
         'markitdown',
@@ -48,15 +56,26 @@ a = Analysis(
         'PIL',
         'pytesseract',
         'onnxruntime',
-    ] + magika_hiddenimports + easyocr_hiddenimports,
+    ] + magika_hiddenimports + easyocr_hiddenimports + torchvision_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
+    # NOTE: do NOT exclude torch.distributed.* or torch.testing here.
+    #   torch/_jit_internal.py eagerly imports torch.distributed.rpc, and
+    #   torch/distributed/__init__.py eagerly imports remote_device, so
+    #   excluding them breaks plain `import torch`. torch/autograd/gradcheck.py
+    #   imports torch.testing, which is pulled in transitively via
+    #   torch.distributed.rpc -> server_process_global_profiler -> autograd.
+    #   The original GradBucket/RpcBackendOptions "generic_type: cannot
+    #   initialize type" crash was NOT caused by these modules but by the
+    #   embedded-EXE mode: the bootloader re-extracts the embedded binaries on
+    #   every start, loading libtorch_python.so twice (two DSO instances ->
+    #   double pybind11 registration). Fixed with exclude_binaries=True below.
+    #   numpy.testing must also stay: scipy/_external/array_api_compat does
+    #   clone_module(np) on import, which pulls numpy.testing at runtime.
     excludes=[
         'matplotlib',
         'pytest',
-        'numpy.testing',
-        'torch.testing',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -69,10 +88,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='markitdown-ui-backend',
     debug=False,
     bootloader_ignore_signals=False,
