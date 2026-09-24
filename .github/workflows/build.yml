@@ -36,14 +36,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pyinstaller "markitdown[all]" PyMuPDF Pillow pytesseract
           sudo apt-get update
-          sudo apt-get install -y libgl1 libglib2.0-0
+          sudo apt-get install -y libgl1 libglib2.0-0 libfuse2
 
       # bundle_easyocr is empty on tag pushes -> treat as true so released
       # packages always ship with working offline OCR (user requirement #2/#3)
+      # torch/torchvision need the pytorch CPU index; easyocr must come from PyPI
       - name: Install OCR deps + pre-download models
         if: github.event.inputs.bundle_easyocr != 'false'
         run: |
-          python -m pip install easyocr torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install easyocr
           python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
 
       - name: Build backend (onedir)
@@ -96,7 +98,8 @@ jobs:
       - name: Install OCR deps + pre-download models
         if: github.event.inputs.bundle_easyocr != 'false'
         run: |
-          python -m pip install easyocr torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install easyocr
           python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
 
       - name: Build backend (onedir)
