@@ -191,6 +191,11 @@ class BackendServer:
 
 
 def run_server() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     server = BackendServer()
     try:
         for line in sys.stdin:
