@@ -1,13 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
 block_cipher = None
+
+# magika embeds its ML models + content-type config as package data;
+# PyInstaller does NOT pick these up automatically -> collect them.
+magika_datas = collect_data_files('magika')
+magika_hiddenimports = collect_submodules('magika')
+markitdown_datas = collect_data_files('markitdown')
 
 a = Analysis(
     ['entrypoint.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('assets', 'assets')],
+    datas=[('assets', 'assets')] + magika_datas + markitdown_datas,
     hiddenimports=[
         'markitdown',
         'markitdown_ui',
@@ -17,7 +25,8 @@ a = Analysis(
         'fitz',
         'PIL',
         'pytesseract',
-    ],
+        'onnxruntime',
+    ] + magika_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
