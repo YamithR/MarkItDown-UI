@@ -39,6 +39,10 @@ def _emit(event: dict) -> None:
     sys.stdout.flush()
 
 
+def _emit_log(message: str) -> None:
+    _emit({"type": "log", "message": message})
+
+
 class BackendServer:
     def __init__(self):
         self._engine = MarkItDown()
@@ -89,8 +93,10 @@ class BackendServer:
             config["easyocr_model_dir"] = model_dir
         with self._lock:
             if self._ocr is None or self._ocr_config != config:
+                _emit_log(f"initializing OCR backends (langs={langs})...")
                 self._ocr = OCRManager(self._engine, config=config)
                 self._ocr_config = config
+                _emit_log("OCR backends ready: " + ", ".join(self._ocr.get_all_names()))
             return self._ocr
 
     def _convert_batch(self, rid: int, req: dict) -> None:
@@ -103,6 +109,8 @@ class BackendServer:
                 ocr.set_active(backend_name)
             elif ocr_enabled:
                 ocr.auto_select_best()
+            active = ocr.get_active()
+            _emit_log("OCR active: " + (active.get_name() if active else "none"))
 
             paths = req.get("paths") or []
             out_dir = Path(req.get("output") or os.getcwd())
@@ -119,8 +127,10 @@ class BackendServer:
             for idx, f in enumerate(files):
                 _emit({"type": "file_status", "id": rid, "file": str(f), "status": "converting"})
                 try:
+                    _emit_log(f"markitdown: {f.name}")
                     md_out = self._engine.convert(str(f)).markdown
                     if ocr_enabled and self._needs_ocr(f):
+                        _emit_log(f"ocr: {f.name}")
                         md_out = self._apply_ocr(f, md_out, rid)
                     out_path = out_dir / (f.stem + ".md")
                     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +142,7 @@ class BackendServer:
                     })
                 except Exception as exc:
                     err_count += 1
+                    _emit_log(f"error: {f.name}: {exc}")
                     _emit({
                         "type": "file_done", "id": rid, "file": str(f),
                         "status": "error", "error": str(exc),
@@ -164,9 +175,11 @@ class BackendServer:
             total_chars = sum(len(page.get_text().strip()) for page in doc)
             doc.close()
             if total_chars <= 100:
+                _emit_log(f"scanned pdf: {f.name}, {total_chars} chars, ocr per page")
                 doc = fitz.open(str(f))
                 pages_md = []
                 for pg in range(len(doc)):
+                    _emit_log(f"ocr page {pg + 1}/{len(doc)}")
                     pages_md.append(active.extract_from_pdf(f, pg))
                 doc.close()
                 if any(pages_md):

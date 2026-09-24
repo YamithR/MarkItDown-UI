@@ -59,9 +59,22 @@ function startBackend() {
     try {
       msg = JSON.parse(line);
     } catch {
+      const text = line.trim();
+      if (text) {
+        logBackendLine(text);
+        mainWindow?.webContents.send('backend:event', {
+          type: 'log',
+          id: uid + 1,
+          message: text,
+          stream: 'stdout',
+        });
+      }
       return;
     }
     const id = msg.id;
+    if (msg.type === 'log') {
+      logBackendLine(msg.message || '');
+    }
     const terminal = msg.type === 'pong' || msg.type === 'backends' ||
                      msg.type === 'batch_done' || msg.type === 'error';
     if (id != null && terminal && pending.has(id)) {

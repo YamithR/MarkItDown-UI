@@ -65,6 +65,39 @@ function setStatusLine(msg, kind) {
   el.className = 'status-line' + (kind ? ' ' + kind : '');
 }
 
+/* ===== Live process log ===== */
+const LOG_CAP = 3000;
+
+function appendLog(kind, text) {
+  const box = $('log-content');
+  const line = document.createElement('div');
+  line.className = 'log-line' + (kind ? ' log-' + kind : '');
+  const ts = document.createElement('span');
+  ts.className = 'log-ts';
+  ts.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const msg = document.createElement('span');
+  msg.textContent = text;
+  line.append(ts, msg);
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+  box.appendChild(line);
+  while (box.childElementCount > LOG_CAP) box.removeChild(box.firstChild);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+  $('log-clear').hidden = false;
+}
+
+function clearLog() {
+  $('log-content').innerHTML = '';
+  $('log-clear').hidden = true;
+}
+
+function toggleLog(force) {
+  const panel = $('log-panel');
+  const open = typeof force === 'boolean' ? force : panel.hidden;
+  panel.hidden = !open;
+  $('log-toggle').classList.toggle('active', open);
+  if (open) $('log-content').scrollTop = $('log-content').scrollHeight;
+}
+
 /* ===== Theme ===== */
 function applyTheme(theme) {
   state.theme = theme === 'dark' ? 'dark' : 'light';
@@ -130,6 +163,11 @@ function applyLanguage(lang) {
   $('about-repo-link').textContent = t('aboutRepo');
   $('about-close').setAttribute('aria-label', t('close'));
   $('theme-btn').title = t('themeLabel');
+  $('log-toggle').textContent = t('log');
+  $('log-toggle').title = t('logTitle');
+  $('log-title').textContent = t('logTitle');
+  $('log-clear').textContent = t('logClear');
+  $('log-close').setAttribute('aria-label', t('close'));
   renderFiles();
 }
 
@@ -298,11 +336,25 @@ function handleEvent(msg) {
     updateProgress(msg.pct);
     return;
   }
+  if (msg.type === 'log') {
+    appendLog(msg.stream === 'stderr' ? 'stderr' : '', msg.message);
+    return;
+  }
+  if (msg.type === 'stderr') {
+    appendLog('stderr', msg.message);
+    console.error('[backend stderr]', msg.message);
+    return;
+  }
+  if (msg.type === 'batch_start') {
+    appendLog('', t('batchStart', { total: msg.total }));
+    return;
+  }
   if (msg.type === 'file_status' && msg.status === 'converting') {
     const f = findFile(msg.file);
     if (f) {
       f.status = 'converting';
       renderFiles();
+      appendLog('', t('logConverting', { name: nameOf(msg.file) }));
     }
     return;
   }
@@ -313,33 +365,34 @@ function handleEvent(msg) {
         f.status = 'ok';
         f.output = msg.output || null;
       }
+      appendLog('', t('logDone', { name: nameOf(msg.file) }));
       updateProgressLive();
     } else {
       if (f) {
         f.status = 'error';
         f.error = msg.error || 'unknown error';
       }
+      appendLog('error', t('logFailed', { name: nameOf(msg.file), err: msg.error || 'unknown error' }));
     }
     renderFiles();
     return;
   }
   if (msg.type === 'error') {
     setStatusLine(msg.message || 'Error', 'error');
-    return;
-  }
-  if (msg.type === 'stderr') {
-    console.error('[backend stderr]', msg.message);
+    appendLog('error', msg.message || 'Error');
     return;
   }
   if (msg.type === 'backend_error') {
     setStatusLine(t('backendError', { msg: msg.message || 'unknown' }), 'error');
     showToast(t('backendError', { msg: msg.message || 'unknown' }), 'error');
+    appendLog('error', t('backendError', { msg: msg.message || 'unknown' }));
     abortStuckConversion(t('backendError', { msg: msg.message || 'unknown' }));
     return;
   }
   if (msg.type === 'backend_exit') {
     state.converting = false;
     $('convert-btn').disabled = false;
+    appendLog('error', t('backendExited', { code: msg.code }));
     if (msg.code !== 0) {
       setStatusLine(t('backendExited', { code: msg.code }), 'error');
       showToast(t('backendRestart'), 'error');
@@ -442,6 +495,7 @@ function startConversion() {
   $('progress-wrap').hidden = false;
   updateProgress(0);
   setStatusLine(t('converting') + '…');
+  toggleLog(true);
 
   const langs = $('ocr-lang').value
     .split(',')
@@ -550,6 +604,12 @@ function wireEvents() {
   });
 
   $('remove-selected').addEventListener('click', removeSelected);
+
+  $('log-toggle').addEventListener('click', () => toggleLog());
+
+  $('log-clear').addEventListener('click', clearLog);
+
+  $('log-close').addEventListener('click', () => toggleLog(false));
 
   $('dest-browse').addEventListener('click', async () => {
     const dir = await window.api.pickFolder();

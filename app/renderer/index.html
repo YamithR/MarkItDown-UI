@@ -52,21 +52,35 @@
       <div class="file-section-head">
         <span class="section-title" id="files-title"></span>
         <span class="file-count" id="file-count"></span>
+        <span class="head-spacer"></span>
+        <button id="log-toggle" class="btn btn-ghost btn-small" title=""></button>
         <button id="remove-selected" class="btn btn-ghost" hidden></button>
       </div>
-      <div class="file-list-wrap">
-        <table class="file-table">
-          <thead>
-            <tr>
-              <th class="col-check"></th>
-              <th class="col-name" id="th-name"></th>
-              <th class="col-size" id="th-size"></th>
-              <th class="col-status" id="th-status"></th>
-            </tr>
-          </thead>
-          <tbody id="file-tbody"></tbody>
-        </table>
-        <div class="file-list-empty" id="file-empty" hidden></div>
+      <div class="file-list-row">
+        <div class="file-list-wrap">
+          <table class="file-table">
+            <thead>
+              <tr>
+                <th class="col-check"></th>
+                <th class="col-name" id="th-name"></th>
+                <th class="col-size" id="th-size"></th>
+                <th class="col-status" id="th-status"></th>
+              </tr>
+            </thead>
+            <tbody id="file-tbody"></tbody>
+          </table>
+          <div class="file-list-empty" id="file-empty" hidden></div>
+        </div>
+        <aside class="log-panel" id="log-panel" hidden>
+          <div class="log-panel-head">
+            <span class="log-panel-title" id="log-title"></span>
+            <div class="log-panel-actions">
+              <button id="log-clear" class="btn btn-ghost btn-small" hidden></button>
+              <button id="log-close" class="icon-btn" aria-label="Close">&times;</button>
+            </div>
+          </div>
+          <pre class="log-content" id="log-content"></pre>
+        </aside>
       </div>
     </section>
   </main>
