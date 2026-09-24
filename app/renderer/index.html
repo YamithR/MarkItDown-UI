@@ -17,9 +17,21 @@
       <span class="brand-name">MarkItDown UI</span>
       <span class="brand-ver" id="app-version"></span>
     </div>
-    <div class="lang-switch" role="group" aria-label="language">
-      <button id="lang-en" class="lang-btn" data-lang="en">EN</button>
-      <button id="lang-es" class="lang-btn" data-lang="es">ES</button>
+    <div class="header-controls">
+      <button id="theme-btn" class="icon-btn" title="" aria-label="dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button id="about-btn" class="btn btn-ghost"></button>
+      <div class="lang-switch" role="group" aria-label="language">
+        <button id="lang-en" class="lang-btn" data-lang="en">EN</button>
+        <button id="lang-es" class="lang-btn" data-lang="es">ES</button>
+      </div>
     </div>
   </header>
 
@@ -97,6 +109,24 @@
       </div>
     </div>
   </footer>
+
+  <div id="about-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <div class="modal-head">
+        <span class="modal-title" id="about-title"></span>
+        <button id="about-close" class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="about-brand">
+          <span class="brand-name">MarkItDown UI</span>
+          <span class="about-version" id="about-version"></span>
+        </div>
+        <p class="about-sub" id="about-dev-label"></p>
+        <p class="about-name">Yamith Romero - <span id="about-role"></span></p>
+        <p class="about-repo"><a href="#" id="about-repo-link"></a></p>
+      </div>
+    </div>
+  </div>
 
   <script src="i18n.js"></script>
   <script src="renderer.js"></script>

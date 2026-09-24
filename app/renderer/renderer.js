@@ -3,6 +3,7 @@
 /* ===== State ===== */
 const state = {
   lang: 'en',
+  theme: 'light',
   files: [],            // {path, name, size, status: 'pending'|'converting'|'ok'|'error', output, error}
   selected: new Set(),  // indexes
   conversionId: null,
@@ -64,6 +65,42 @@ function setStatusLine(msg, kind) {
   el.className = 'status-line' + (kind ? ' ' + kind : '');
 }
 
+/* ===== Theme ===== */
+function applyTheme(theme) {
+  state.theme = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', state.theme);
+  try {
+    localStorage.setItem('markitdown-theme', state.theme);
+  } catch { /* storage unavailable */ }
+}
+
+function initTheme() {
+  let theme = null;
+  try {
+    theme = localStorage.getItem('markitdown-theme');
+  } catch { /* storage unavailable */ }
+  if (theme !== 'dark' && theme !== 'light') {
+    theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  applyTheme(theme);
+}
+
+/* ===== About modal ===== */
+function openAbout(version) {
+  const modal = $('about-modal');
+  $('about-version').textContent = version ? 'v' + version : $('app-version').textContent;
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+  $('about-close').focus();
+}
+
+function closeAbout() {
+  const modal = $('about-modal');
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+  $('about-btn').focus();
+}
+
 /* ===== i18n ===== */
 function applyLanguage(lang) {
   state.lang = lang === 'es' ? 'es' : 'en';
@@ -86,6 +123,13 @@ function applyLanguage(lang) {
   $('remove-selected').textContent = t('removeSelected');
   $('convert-btn').textContent = t('convertBtn');
   $('file-empty').textContent = t('noFiles');
+  $('about-btn').textContent = t('about');
+  $('about-title').textContent = t('aboutTitle');
+  $('about-dev-label').textContent = t('aboutDev');
+  $('about-role').textContent = t('aboutRole');
+  $('about-repo-link').textContent = t('aboutRepo');
+  $('about-close').setAttribute('aria-label', t('close'));
+  $('theme-btn').title = t('themeLabel');
   renderFiles();
 }
 
@@ -212,7 +256,20 @@ function addFiles(paths) {
     state.dest = dirOf(last);
     $('dest-input').value = state.dest;
   }
-  if (added > 0) renderFiles();
+  if (added > 0) {
+    renderFiles();
+    // fetch the real size for the newly added files (async, non-blocking)
+    for (const p of paths) {
+      window.api.getFileSize(p).then((size) => {
+        if (typeof size !== 'number' || size < 0) return;
+        const f = findFile(p);
+        if (f && f.size !== size) {
+          f.size = size;
+          renderFiles();
+        }
+      }).catch(() => {});
+    }
+  }
 }
 
 function removeSelected() {
@@ -271,11 +328,13 @@ function handleEvent(msg) {
     return;
   }
   if (msg.type === 'stderr') {
+    console.error('[backend stderr]', msg.message);
     return;
   }
   if (msg.type === 'backend_error') {
     setStatusLine(t('backendError', { msg: msg.message || 'unknown' }), 'error');
     showToast(t('backendError', { msg: msg.message || 'unknown' }), 'error');
+    abortStuckConversion(t('backendError', { msg: msg.message || 'unknown' }));
     return;
   }
   if (msg.type === 'backend_exit') {
@@ -284,7 +343,27 @@ function handleEvent(msg) {
     if (msg.code !== 0) {
       setStatusLine(t('backendExited', { code: msg.code }), 'error');
       showToast(t('backendRestart'), 'error');
+      abortStuckConversion(t('backendExited', { code: msg.code }));
     }
+  }
+}
+
+// If the backend dies while files are still 'converting', un-stick the UI
+// so the user is not left with a never-ending spinner.
+function abortStuckConversion(reason) {
+  let stuck = false;
+  for (const f of state.files) {
+    if (f.status === 'converting') {
+      f.status = 'error';
+      f.error = reason || 'backend stopped';
+      stuck = true;
+    }
+  }
+  if (stuck || !$('progress-wrap').hidden) {
+    state.converting = false;
+    $('convert-btn').disabled = false;
+    $('progress-wrap').hidden = true;
+    renderFiles();
   }
 }
 
@@ -441,10 +520,33 @@ function wireEvents() {
   });
 
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('about-modal').hidden) {
+      closeAbout();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected.size > 0) {
       e.preventDefault();
       removeSelected();
     }
+  });
+
+  $('theme-btn').addEventListener('click', () => {
+    applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+  });
+
+  $('about-btn').addEventListener('click', () => {
+    openAbout(versionCache);
+  });
+
+  $('about-close').addEventListener('click', closeAbout);
+
+  $('about-repo-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    window.api.openExternal('https://github.com/YamithR/MarkItDown-UI');
+  });
+
+  $('about-modal').addEventListener('click', (e) => {
+    if (e.target === $('about-modal')) closeAbout();
   });
 
   $('remove-selected').addEventListener('click', removeSelected);
@@ -477,8 +579,10 @@ function wireEvents() {
 }
 
 /* ===== Boot ===== */
+let versionCache = '';
 (async function boot() {
   wireEvents();
+  initTheme();
   applyLanguage('en');
   try {
     const locale = await window.api.getLocale();
@@ -486,6 +590,7 @@ function wireEvents() {
   } catch { /* keep default */ }
   try {
     const ver = await window.api.getVersion();
+    versionCache = ver;
     $('app-version').textContent = 'v' + ver;
   } catch { /* ignore */ }
   window.api.onBackendEvent(handleEvent);

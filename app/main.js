@@ -8,6 +8,17 @@ let mainWindow = null;
 let backendProc = null;
 let uid = 0;
 const pending = new Map();
+let backendLog = null;
+
+function logBackendLine(text) {
+  try {
+    if (!backendLog) {
+      const logFile = path.join(app.getPath('userData'), 'backend.log');
+      backendLog = fs.createWriteStream(logFile, { flags: 'a' });
+    }
+    backendLog.write(`[${new Date().toISOString()}] ${text}\n`);
+  } catch { /* logging must never break the app */ }
+}
 
 function backendCommand() {
   if (app.isPackaged) {
@@ -68,6 +79,7 @@ function startBackend() {
   backendProc.stderr.on('data', (buf) => {
     const text = buf.toString().trim();
     if (text) {
+      logBackendLine(text);
       mainWindow?.webContents.send('backend:event', {
         type: 'stderr',
         id: uid + 1,
@@ -77,6 +89,7 @@ function startBackend() {
   });
 
   backendProc.on('exit', (code) => {
+    logBackendLine(`__BACKEND_EXIT__ code=${code}`);
     rejectAllPending(`backend exited with code ${code}`);
     mainWindow?.webContents.send('backend:event', {
       type: 'backend_exit',
@@ -86,6 +99,7 @@ function startBackend() {
     backendProc = null;
   });
   backendProc.on('error', (err) => {
+    logBackendLine(`__BACKEND_ERROR__ ${err.message}`);
     rejectAllPending(`backend error: ${err.message}`);
     mainWindow?.webContents.send('backend:event', {
       type: 'backend_error',
@@ -194,3 +208,23 @@ ipcMain.handle('app:locale', () => {
 });
 
 ipcMain.handle('app:version', () => app.getVersion());
+
+ipcMain.handle('file:stat', async (_evt, target) => {
+  if (!target || typeof target !== 'string') return null;
+  try {
+    const st = await fs.promises.stat(target);
+    return st.size;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('shell:open-external', async (_evt, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return false;
+  try {
+    await shell.openExternal(url);
+    return true;
+  } catch {
+    return false;
+  }
+});

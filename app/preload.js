@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   openPath: (path) => ipcRenderer.invoke('shell:open-path', path),
   getLocale: () => ipcRenderer.invoke('app:locale'),
   getVersion: () => ipcRenderer.invoke('app:version'),
+  getFileSize: (path) => ipcRenderer.invoke('file:stat', path),
+  openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   getPathForFile: (file) => webUtils.getPathForFile(file),
 });
