@@ -13,3 +13,6 @@ dist/markitdown-ui.exe
 
 # EasyOCR pre-downloaded models (fetched at build time)
 assets/easyocr_models/
+
+# Tool cache
+.omo/
