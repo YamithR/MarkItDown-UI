@@ -1,13 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+import queue
 import threading
 
 from markitdown import MarkItDown, UnsupportedFormatException
 
 from .ocr_manager import OCRManager
 
-VERSION = "1.1.0"
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    _HAS_DND = True
+except ImportError:
+    _HAS_DND = False
+
+VERSION = "1.2.0"
 
 STATUS_PENDING = "\u2b1c"
 STATUS_CONVERTING = "\u23f3"
@@ -118,6 +125,19 @@ class FileItem:
         self.status = STATUS_PENDING
         self.output_name = os.path.splitext(os.path.basename(path))[0] + ".md"
         self.ocr_applied = False
+        try:
+            self.size = os.path.getsize(path)
+        except OSError:
+            self.size = 0
+
+    @property
+    def size_human(self) -> str:
+        n = float(self.size)
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024 or unit == "GB":
+                return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{self.size} B"
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp", ".gif"}
@@ -132,14 +152,20 @@ class MarkItDownGUI:
         self._engine = MarkItDown()
         self._ocr = OCRManager(self._engine)
         self.lang = tk.StringVar(value="en")
+        self._lang_code = "en"
         self.ocr_enabled = tk.BooleanVar(value=True)
+        self._ocr_enabled_flag = True
         self.ocr_lang = tk.StringVar(value="en")
         self.ocr_backend = tk.StringVar()
         self.ocr_info = tk.StringVar()
+        self._ocr_langs_cache = ["en"]
 
         self.files: list[FileItem] = []
         self.output_dir = tk.StringVar()
         self.status_text = tk.StringVar()
+        self._ui_queue = queue.Queue()
+        self._last_dst = ""
+        self._poll_ui_queue()
 
         self._style_ui()
         self._build_ui()
@@ -148,7 +174,7 @@ class MarkItDownGUI:
         self._center_window()
 
     def _tr(self, key: str, *args: str) -> str:
-        s = LANG.get(self.lang.get(), LANG["en"]).get(key, key)
+        s = LANG.get(self._lang_code, LANG["en"]).get(key, key)
         if args:
             return s.format(*args)
         return s
@@ -166,14 +192,34 @@ class MarkItDownGUI:
     def _style_ui(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure("TFrame", background="#f5f5f5")
-        style.configure("Header.TLabel", font=("Segoe UI", 10, "bold"))
-        style.configure("Title.TLabel", font=("Segoe UI", 11, "bold"), foreground="#1a73e8")
-        style.configure("Status.TLabel", font=("Segoe UI", 9), foreground="#555")
-        style.configure("Convert.TButton", font=("Segoe UI", 11, "bold"), padding=8)
-        style.configure("Small.TButton", font=("Segoe UI", 9), padding=2)
-        style.configure("Treeview", rowheight=28, font=("Segoe UI", 10))
-        style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
+        bg = "#f5f7fa"
+        fg = "#1f2937"
+        accent = "#1a73e8"
+        border = "#d1d5db"
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=bg, foreground=fg)
+        style.configure("Header.TLabel", font=("Segoe UI", 10, "bold"), foreground="#374151")
+        style.configure("Title.TLabel", font=("Segoe UI", 13, "bold"), foreground=accent)
+        style.configure("Status.TLabel", font=("Segoe UI", 9), foreground="#6b7280")
+        style.configure("Convert.TButton", font=("Segoe UI", 11, "bold"), padding=10,
+                        background=accent, foreground="#ffffff", borderwidth=0)
+        style.map("Convert.TButton",
+                  background=[("active", "#1557b0"), ("disabled", "#9db9e8")],
+                  foreground=[("disabled", "#e5e7eb")])
+        style.configure("Small.TButton", font=("Segoe UI", 9), padding=4)
+        style.configure("TLabelframe", background=bg, bordercolor=border)
+        style.configure("TLabelframe.Label", background=bg, foreground="#374151",
+                        font=("Segoe UI", 9, "bold"))
+        style.configure("Treeview", rowheight=28, font=("Segoe UI", 10),
+                        background="#ffffff", fieldbackground="#ffffff", foreground=fg)
+        style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"),
+                        background="#eef2f7", foreground="#374151")
+        style.map("Treeview", background=[("selected", "#dbeafe")],
+                  foreground=[("selected", fg)])
+        style.configure("TEntry", fieldbackground="#ffffff", bordercolor=border)
+        style.configure("TCombobox", fieldbackground="#ffffff", bordercolor=border)
+        style.configure("Horizontal.TProgressbar", background=accent, troughcolor="#e5e7eb",
+                        bordercolor=border, lightcolor=accent, darkcolor=accent)
 
     # ------------------------------------------------------------------
     # Build UI
@@ -225,15 +271,23 @@ class MarkItDownGUI:
 
         self.tree = ttk.Treeview(
             left,
-            columns=("status",),
+            columns=("size", "ocr", "status"),
             show="tree",
             selectmode="extended",
         )
         self.tree.heading("#0", text="File name")
-        self.tree.column("#0", width=320, minwidth=200, stretch=True)
+        self.tree.column("#0", width=260, minwidth=150, stretch=True)
+        self.tree.heading("size", text="Size")
+        self.tree.column("size", width=70, minwidth=60, stretch=False, anchor=tk.E)
+        self.tree.heading("ocr", text="OCR")
+        self.tree.column("ocr", width=45, minwidth=40, stretch=False, anchor=tk.CENTER)
         self.tree.heading("status", text="")
         self.tree.column("status", width=40, minwidth=40, stretch=False, anchor=tk.CENTER)
         self.tree.grid(row=1, column=0, sticky=tk.NSEW)
+
+        if _HAS_DND:
+            self.tree.drop_target_register(DND_FILES)
+            self.tree.dnd_bind("<<Drop>>", self._on_drop)
 
         scroll_tree = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self.tree.yview)
         scroll_tree.grid(row=1, column=1, sticky=tk.NS)
@@ -326,7 +380,7 @@ class MarkItDownGUI:
     # Language
     # ------------------------------------------------------------------
     def _apply_language(self) -> None:
-        lang = self.lang.get()
+        self._lang_code = self.lang.get()
         self.root.title(self._tr("title"))
         self.title_lbl.configure(text=self._tr("title"))
         self.lang_lbl.configure(text=self._tr("lang_label"))
@@ -362,7 +416,11 @@ class MarkItDownGUI:
         for iid in self.tree.get_children():
             self.tree.delete(iid)
         for f in self.files:
-            self.tree.insert("", tk.END, text=f.name, values=(f.status,))
+            ocr_mark = "✓" if f.ocr_applied else ""
+            self.tree.insert(
+                "", tk.END, text=f.name,
+                values=(f.size_human, ocr_mark, f.status),
+            )
         n = len(self.files)
         s = self._tr("summary_plural") if n != 1 else ""
         self.summary_lbl.configure(text=self._tr("summary").format(n, s))
@@ -375,13 +433,28 @@ class MarkItDownGUI:
         )
         if not paths:
             return
+        if paths and not self.output_dir.get():
+            self.output_dir.set(os.path.dirname(paths[0]))
+        self._add_paths(paths)
+
+    def _on_drop(self, event) -> None:
+        raw = self.root.tk.splitlist(event.data)
+        paths = [p for p in raw if os.path.isfile(p)]
+        if not paths:
+            return
+        if paths and not self.output_dir.get():
+            self.output_dir.set(os.path.dirname(paths[0]))
+        self._add_paths(paths)
+
+    def _add_paths(self, paths) -> None:
         existing = {f.path for f in self.files}
+        added = 0
         for p in paths:
             if p not in existing:
                 self.files.append(FileItem(p))
-        if paths and not self.output_dir.get():
-            self.output_dir.set(os.path.dirname(paths[0]))
-        self._refresh_tree()
+                added += 1
+        if added:
+            self._refresh_tree()
 
     def _remove_selected(self) -> None:
         sel = self.tree.selection()
@@ -427,12 +500,15 @@ class MarkItDownGUI:
             self.ocr_info.set(f"{name} | {self.ocr_lang.get()}")
 
     def _update_ocr_state(self) -> None:
-        state = "normal" if self.ocr_enabled.get() else "disabled"
+        self._ocr_enabled_flag = bool(self.ocr_enabled.get())
+        state = "normal" if self._ocr_enabled_flag else "disabled"
         self.ocr_backend_combo.configure(state=state)
         self.ocr_lang_entry.configure(state=state)
 
     def _prepare_ocr(self) -> None:
         langs = [l.strip() for l in self.ocr_lang.get().split(",") if l.strip()] or ["en"]
+        self._ocr_langs_cache = langs
+        self._ocr_enabled_flag = bool(self.ocr_enabled.get())
         self._ocr.config = {
             "ocr_languages": langs,
             "ocr_gpu": False,
@@ -502,61 +578,83 @@ class MarkItDownGUI:
             target=self._do_batch, args=(dst_dir,), daemon=True
         ).start()
 
+    def _poll_ui_queue(self) -> None:
+        try:
+            while True:
+                msg = self._ui_queue.get_nowait()
+                kind = msg[0]
+                if kind == "progress":
+                    self.progress["value"] = msg[1]
+                elif kind == "status":
+                    self.status_text.set(msg[1])
+                elif kind == "file_status":
+                    fi, status = msg[1], msg[2]
+                    fi.status = status
+                    self._refresh_tree()
+                elif kind == "done":
+                    ok_count, err_count = msg[1], msg[2]
+                    self._set_busy(False)
+                    sp = self._tr("status_done_plural") if ok_count != 1 else ""
+                    text = self._tr("status_done").format(ok_count, sp)
+                    if err_count:
+                        ep = self._tr("status_done_errors_plural") if err_count != 1 else ""
+                        text += self._tr("status_done_errors").format(err_count, ep)
+                    self.status_text.set(text)
+                    self.progress["value"] = 100
+                    if err_count > 0:
+                        fp = self._tr("result_mixed_fp") if ok_count != 1 else ""
+                        fp2 = self._tr("result_mixed_fp2") if ok_count != 1 else ""
+                        ep = self._tr("result_mixed_ep") if err_count != 1 else ""
+                        messagebox.showwarning(
+                            self._tr("result_title"),
+                            self._tr("result_mixed").format(ok_count, fp, fp2, err_count, ep),
+                        )
+                    else:
+                        p = self._tr("completed_ok_plural") if ok_count != 1 else ""
+                        ret = messagebox.askyesno(
+                            self._tr("completed_title"),
+                            self._tr("completed_ok").format(ok_count, p, p),
+                        )
+                        if ret:
+                            self._open_folder(self._last_dst)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._poll_ui_queue)
+
     def _do_batch(self, dst_dir: str) -> None:
         total = len(self.files)
         ok_count = 0
         err_count = 0
+        self._last_dst = dst_dir
 
         for idx, f in enumerate(self.files):
             dst = os.path.join(dst_dir, f.output_name)
-
-            def update_status(fi: FileItem, s: str, i: int, msg: str) -> None:
-                fi.status = s
-                self._refresh_tree()
-                self.progress["value"] = (i + 1) / total * 100
-                self.status_text.set(msg)
-
-            self.root.after(
-                0,
-                lambda fi=f, i=idx: update_status(
-                    fi, STATUS_CONVERTING, i, self._tr("status_converting_file", fi.name)
-                ),
-            )
+            pct = (idx + 1) / total * 100
+            self._ui_queue.put(("progress", pct))
+            self._ui_queue.put(("status", self._tr("status_converting_file", f.name)))
+            self._ui_queue.put(("file_status", f, STATUS_CONVERTING))
 
             try:
                 result = self._engine.convert(f.path)
                 markdown_out = result.markdown
 
-                if self.ocr_enabled.get() and self._needs_ocr(f.path):
+                if self._ocr_enabled_flag and self._needs_ocr(f.path):
                     ext = os.path.splitext(f.path)[1].lower()
                     if ext in IMAGE_EXTS:
-                        self.root.after(
-                            0,
-                            lambda fi=f, i=idx: update_status(
-                                fi, STATUS_CONVERTING, i, self._tr("ocr_scan", fi.name)
-                            ),
-                        )
+                        self._ui_queue.put(("status", self._tr("ocr_scan", f.name)))
                         ocr_text = self._ocr_image_to_markdown(f.path)
                         if ocr_text:
                             markdown_out = ocr_text + "\n\n" + markdown_out
                     elif ext == ".pdf" and self._pdf_is_scanned(f.path):
-                        self.root.after(
-                            0,
-                            lambda fi=f, i=idx: update_status(
-                                fi, STATUS_CONVERTING, i, self._tr("ocr_detecting", fi.name)
-                            ),
-                        )
+                        self._ui_queue.put(("status", self._tr("ocr_detecting", f.name)))
                         import fitz
                         doc = fitz.open(f.path)
                         pages_md = []
                         for pg in range(len(doc)):
-                            self.root.after(
-                                0,
-                                lambda fi=f, i=idx, p=pg: update_status(
-                                    fi, STATUS_CONVERTING, i,
-                                    self._tr("ocr_scan", f"{fi.name} (p{p + 1})")
-                                ),
-                            )
+                            self._ui_queue.put((
+                                "status",
+                                self._tr("ocr_scan", f"{f.name} (p{pg + 1})"),
+                            ))
                             pages_md.append(self._ocr.extract_pdf_page_text(f.path, pg))
                         doc.close()
                         if any(pages_md):
@@ -569,58 +667,18 @@ class MarkItDownGUI:
                 with open(dst, "w", encoding="utf-8") as fh:
                     fh.write(markdown_out)
                 ok_count += 1
-                self.root.after(
-                    0,
-                    lambda fi=f, i=idx, d=dst: update_status(
-                        fi, STATUS_OK, i, self._tr("status_converted", os.path.basename(d))
-                    ),
-                )
+                self._ui_queue.put(("status", self._tr("status_converted", os.path.basename(dst))))
+                self._ui_queue.put(("file_status", f, STATUS_OK))
             except UnsupportedFormatException:
                 err_count += 1
-                self.root.after(
-                    0,
-                    lambda fi=f, i=idx: update_status(
-                        fi, STATUS_ERROR, i, self._tr("status_error_unsupported", fi.name)
-                    ),
-                )
+                self._ui_queue.put(("status", self._tr("status_error_unsupported", f.name)))
+                self._ui_queue.put(("file_status", f, STATUS_ERROR))
             except Exception as e:
                 err_count += 1
-                self.root.after(
-                    0,
-                    lambda fi=f, i=idx, m=str(e): update_status(
-                        fi, STATUS_ERROR, i, self._tr("status_error_fmt", fi.name, m)
-                    ),
-                )
+                self._ui_queue.put(("status", self._tr("status_error_fmt", f.name, str(e))))
+                self._ui_queue.put(("file_status", f, STATUS_ERROR))
 
-        def done() -> None:
-            self._set_busy(False)
-
-            sp = self._tr("status_done_plural") if ok_count != 1 else ""
-            msg = self._tr("status_done").format(ok_count, sp)
-            if err_count:
-                ep = self._tr("status_done_errors_plural") if err_count != 1 else ""
-                msg += self._tr("status_done_errors").format(err_count, ep)
-            self.status_text.set(msg)
-            self.progress["value"] = 100
-
-            if err_count > 0:
-                fp = self._tr("result_mixed_fp") if ok_count != 1 else ""
-                fp2 = self._tr("result_mixed_fp2") if ok_count != 1 else ""
-                ep = self._tr("result_mixed_ep") if err_count != 1 else ""
-                messagebox.showwarning(
-                    self._tr("result_title"),
-                    self._tr("result_mixed").format(ok_count, fp, fp2, err_count, ep),
-                )
-            else:
-                p = self._tr("completed_ok_plural") if ok_count != 1 else ""
-                ret = messagebox.askyesno(
-                    self._tr("completed_title"),
-                    self._tr("completed_ok").format(ok_count, p, p),
-                )
-                if ret:
-                    self._open_folder(dst_dir)
-
-        self.root.after(0, done)
+        self._ui_queue.put(("done", ok_count, err_count))
 
     @staticmethod
     def _open_folder(path: str) -> None:
@@ -629,7 +687,10 @@ class MarkItDownGUI:
 
 
 def main() -> None:
-    root = tk.Tk()
+    if _HAS_DND:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
     MarkItDownGUI(root)
     root.mainloop()
 

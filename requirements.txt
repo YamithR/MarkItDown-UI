@@ -1,5 +1,6 @@
 # Core
 markitdown[all]>=0.1.0
+tkinterdnd2>=0.3.0
 
 # OCR backends (offline)
 easyocr>=1.7.0
