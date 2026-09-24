@@ -9,7 +9,13 @@ build/
 # PyInstaller artifacts
 dist/markitdown-ui
 dist/markitdown-ui.exe
+backend/dist/
+backend/build/
 *.spec.bak
+
+# Electron build artifacts
+app/node_modules/
+app/release/
 
 # EasyOCR pre-downloaded models (fetched at build time)
 assets/easyocr_models/

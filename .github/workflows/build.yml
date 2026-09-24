@@ -7,16 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       bundle_easyocr:
-        description: "Bundle EasyOCR models into Windows exe (slow, ~2GB)"
+        description: "Bundle EasyOCR + torch + pre-downloaded models into packages (default: ON, ~1.5GB larger, OCR works offline out of the box)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
 
 jobs:
   build-linux:
-    name: Build .deb (Linux)
+    name: Build Linux (deb + AppImage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,25 +26,54 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev
           python -m pip install --upgrade pip
-          python -m pip install Pillow
+          python -m pip install pyinstaller "markitdown[all]" PyMuPDF Pillow pytesseract
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglib2.0-0
 
-      - name: Build .deb package
-        run: bash build-deb.sh
+      # bundle_easyocr is empty on tag pushes -> treat as true so released
+      # packages always ship with working offline OCR (user requirement #2/#3)
+      - name: Install OCR deps + pre-download models
+        if: github.event.inputs.bundle_easyocr != 'false'
+        run: |
+          python -m pip install easyocr torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
 
-      - name: Upload .deb artifact
+      - name: Build backend (onedir)
+        run: python -m PyInstaller --noconfirm --clean --distpath backend/dist --workpath backend/build backend/backend.spec
+
+      - name: Install Electron deps
+        run: npm install --no-audit --no-fund
+        working-directory: app
+
+      # extraResources always references assets/easyocr_models -> must exist
+      - name: Ensure OCR models dir (may be empty)
+        run: mkdir -p assets/easyocr_models
+
+      - name: Build Electron packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux deb AppImage --publish never
+        working-directory: app
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deb-package
-          path: dist/*.deb
+          name: linux-packages
+          path: |
+            app/release/*.deb
+            app/release/*.AppImage
           if-no-files-found: error
 
   build-windows:
-    name: Build .exe (Windows)
+    name: Build Windows (NSIS + portable exe)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,33 +83,46 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install runtime deps
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install build deps
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller
-          python -m pip install "markitdown[all]" PyMuPDF Pillow pytesseract tkinterdnd2
+          python -m pip install pyinstaller "markitdown[all]" PyMuPDF Pillow pytesseract
 
-      - name: Pre-download EasyOCR models (optional)
-        if: github.event.inputs.bundle_easyocr == 'true'
+      - name: Install OCR deps + pre-download models
+        if: github.event.inputs.bundle_easyocr != 'false'
         run: |
-          python -m pip install easyocr torch torchvision
-          python -c "import easyocr; easyocr.Reader(['en'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
-          echo "EASYOCR_BUNDLED=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+          python -m pip install easyocr torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
 
-      - name: Build executable
-        run: python -m PyInstaller --noconfirm --clean markitdown-ui.spec
+      - name: Build backend (onedir)
+        run: python -m PyInstaller --noconfirm --clean --distpath backend/dist --workpath backend/build backend/backend.spec
 
-      - name: Rename artifact with version
+      - name: Install Electron deps
+        run: npm install --no-audit --no-fund
+        working-directory: app
+
+      - name: Ensure OCR models dir (may be empty)
         shell: bash
-        run: |
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-          cp dist/markitdown-ui.exe "dist/markitdown-ui-${VERSION}-windows.exe"
+        run: mkdir -p assets/easyocr_models
 
-      - name: Upload .exe artifact
+      - name: Build Electron packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis portable --publish never
+        working-directory: app
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: exe-package
-          path: dist/*windows.exe
+          name: windows-packages
+          path: |
+            app/release/*.exe
           if-no-files-found: error
 
   release:
@@ -101,6 +143,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/deb-package/*.deb
-            artifacts/exe-package/*.exe
+            artifacts/linux-packages/*.deb
+            artifacts/linux-packages/*.AppImage
+            artifacts/windows-packages/*.exe
           generate_release_notes: true

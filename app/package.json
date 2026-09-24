@@ -30,7 +30,7 @@
       },
       {
         "from": "../assets/easyocr_models",
-        "to": "easyocr_models",
+        "to": "backend/easyocr_models",
         "filter": ["**/*"]
       }
     ],

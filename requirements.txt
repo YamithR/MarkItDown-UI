@@ -1,11 +1,12 @@
-# Core
+# Core (Electron backend / CLI)
 markitdown[all]>=0.1.0
-tkinterdnd2>=0.3.0
-
-# OCR backends (offline)
-easyocr>=1.7.0
-torch>=2.0.0
-torchvision>=0.15.0
 pytesseract>=0.3.10
 PyMuPDF>=1.23.0
 Pillow>=10.0.0
+
+# Optional OCR backend (bundled in releases by default; ~1.5 GB)
+easyocr>=1.7.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Legacy Tkinter GUI only (legacy/): tkinterdnd2>=0.3.0

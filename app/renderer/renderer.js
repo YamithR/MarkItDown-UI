@@ -223,28 +223,20 @@ function removeSelected() {
 }
 
 /* ===== Backend wire ===== */
-let listRequestId = null;
-
 async function initBackend() {
   try {
-    listRequestId = Date.now();
     const resp = await window.api.requestBackend({ cmd: 'list_backends' });
-    if (resp && resp.type === 'ack') {
-      // await the async "backends" event carrying names
+    if (resp && resp.type === 'backends') {
+      populateBackends(resp.names || [], resp.default_langs || []);
     }
   } catch {
-    // backend offline; event will surface via onBackendEvent
+    // backend offline; surfaced via backend_error event
   }
 }
 
 function handleEvent(msg) {
   if (!msg || typeof msg !== 'object') return;
-  const id = msg.id;
 
-  if (msg.type === 'backends' && id === listRequestId) {
-    populateBackends(msg.names || [], msg.default_langs || []);
-    return;
-  }
   if (msg.type === 'progress') {
     updateProgress(msg.pct);
     return;
@@ -274,16 +266,11 @@ function handleEvent(msg) {
     renderFiles();
     return;
   }
-  if (msg.type === 'batch_done') {
-    finishConversion(msg.ok || 0, msg.err || 0);
-    return;
-  }
   if (msg.type === 'error') {
     setStatusLine(msg.message || 'Error', 'error');
     return;
   }
   if (msg.type === 'stderr') {
-    // informational engine logs
     return;
   }
   if (msg.type === 'backend_error') {
@@ -342,6 +329,7 @@ function updateProgressLive() {
 }
 
 function finishConversion(okCount, errCount) {
+  if (!state.converting) return;
   state.converting = false;
   $('convert-btn').disabled = false;
   $('progress-wrap').hidden = true;
@@ -394,9 +382,20 @@ function startConversion() {
 
   window.api
     .requestBackend(req)
+    .then((resp) => {
+      if (resp && resp.type === 'batch_done') {
+        finishConversion(resp.ok || 0, resp.err || 0);
+      } else if (resp && resp.type === 'error') {
+        state.converting = false;
+        $('convert-btn').disabled = false;
+        $('progress-wrap').hidden = true;
+        setStatusLine(resp.message || 'Error', 'error');
+      }
+    })
     .catch((err) => {
       state.converting = false;
       $('convert-btn').disabled = false;
+      $('progress-wrap').hidden = true;
       setStatusLine(t('backendError', { msg: err.message }), 'error');
     });
 }

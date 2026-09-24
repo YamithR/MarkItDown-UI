@@ -17,7 +17,7 @@ function backendCommand() {
       args: [],
       env: {
         ...process.env,
-        EASYOCR_MODEL_DIR: path.join(process.resourcesPath, 'easyocr_models'),
+        EASYOCR_MODEL_DIR: path.join(process.resourcesPath, 'backend', 'easyocr_models'),
       },
       cwd: process.resourcesPath,
     };
@@ -38,6 +38,7 @@ function startBackend() {
   backendProc = spawn(cmd, args, {
     env,
     cwd,
+    windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -50,10 +51,16 @@ function startBackend() {
       return;
     }
     const id = msg.id;
-    if (id != null && msg.type === 'pong' && pending.has(id)) {
+    const terminal = msg.type === 'pong' || msg.type === 'backends' ||
+                     msg.type === 'batch_done' || msg.type === 'error';
+    if (id != null && terminal && pending.has(id)) {
       pending.get(id).resolve(msg);
       pending.delete(id);
-      return;
+      if (msg.type === 'pong' || msg.type === 'backends' || msg.type === 'batch_done') {
+        // reply consumed by the awaiting renderer request; batch events were
+        // already forwarded as they streamed in
+        return;
+      }
     }
     mainWindow?.webContents.send('backend:event', msg);
   });
@@ -70,6 +77,7 @@ function startBackend() {
   });
 
   backendProc.on('exit', (code) => {
+    rejectAllPending(`backend exited with code ${code}`);
     mainWindow?.webContents.send('backend:event', {
       type: 'backend_exit',
       id: 0,
@@ -78,6 +86,7 @@ function startBackend() {
     backendProc = null;
   });
   backendProc.on('error', (err) => {
+    rejectAllPending(`backend error: ${err.message}`);
     mainWindow?.webContents.send('backend:event', {
       type: 'backend_error',
       id: 0,
@@ -86,17 +95,26 @@ function startBackend() {
   });
 }
 
+function rejectAllPending(reason) {
+  for (const [id, entry] of pending) {
+    entry.reject(new Error(reason));
+    pending.delete(id);
+  }
+}
+
 function requestBackend(req) {
   return new Promise((resolve, reject) => {
     const id = ++uid;
     req = { ...req, id };
     pending.set(id, { resolve, reject });
-    setTimeout(() => {
-      if (pending.has(id)) {
-        pending.delete(id);
-        reject(new Error(`timeout: no reply for request ${id}`));
-      }
-    }, 30000);
+    if (req.cmd !== 'convert') {
+      setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id);
+          reject(new Error(`timeout: no reply for request ${id}`));
+        }
+      }, 30000);
+    }
     backendProc?.stdin.write(JSON.stringify(req) + '\n');
   });
 }
