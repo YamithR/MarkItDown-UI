@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PACKAGE="markitdown-gui"
-VERSION="1.2.0"
+# Tomar la version del ultimo tag git (v1.2.1 -> 1.2.1), o fallback
+VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo '1.2.1')"
 ARCH="all"
 BUILD_ROOT="$(mktemp -d)"
 DEB_DIR="$BUILD_ROOT/${PACKAGE}_${VERSION}_${ARCH}"
