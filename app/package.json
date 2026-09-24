@@ -8,7 +8,7 @@
     "url": "https://github.com/YamithR/MarkItDown-UI.git"
   },
   "main": "main.js",
-  "author": "Yamith Romero",
+  "author": "Yamith Romero <yamithr@YamithMSI-deb.yjra.net>",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
