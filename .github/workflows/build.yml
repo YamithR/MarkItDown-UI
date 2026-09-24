@@ -29,8 +29,9 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev python3-pil
+          sudo apt-get install -y dpkg-dev
           python -m pip install --upgrade pip
+          python -m pip install Pillow
 
       - name: Build .deb package
         run: bash build-deb.sh
