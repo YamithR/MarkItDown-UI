@@ -1,0 +1,88 @@
+'use strict';
+
+const I18N = {
+  en: {
+    dropText: 'Drop files here or click to add',
+    dropHint: 'PDF, DOCX, PPTX, XLSX, images, HTML, CSV and more',
+    filesTitle: 'Files',
+    thName: 'Name',
+    thSize: 'Size',
+    thStatus: 'Status',
+    noFiles: 'No files yet',
+    addFiles: 'Add files',
+    removeSelected: 'Remove selected',
+    destLabel: 'Destination folder',
+    browse: 'Browse',
+    open: 'Open',
+    openTitle: 'Open destination in file manager',
+    ocrLabel: 'OCR',
+    ocrTitle: 'Extract text from images and scanned documents',
+    ocrBackendLabel: 'Backend',
+    ocrLangLabel: 'Languages',
+    noBackends: 'No OCR backends available',
+    converting: 'Converting to Markdown',
+    converted: 'converted',
+    errors: 'errors',
+    batchDoneOk: 'Done: {ok} files converted, {err} errors.',
+    convertBtn: 'Convert to Markdown',
+    statusPending: 'Pending',
+    statusConverting: 'Converting',
+    statusOk: 'Converted',
+    statusError: 'Error',
+    stErrPrefix: 'Backend:',
+    backendError: 'Backend failed to start: {msg}',
+    backendExited: 'Backend process exited (code {code}).',
+    backendRestart: 'The engine stopped unexpectedly. Check the installation.',
+    destMissing: 'The destination folder does not exist.',
+    destAuto: 'Used the source folder as destination.',
+    langChanged: 'Language: {lang}',
+    httpHint: '',
+  },
+  es: {
+    dropText: 'Arrastra archivos aquí o haz clic para agregar',
+    dropHint: 'PDF, DOCX, PPTX, XLSX, imágenes, HTML, CSV y más',
+    filesTitle: 'Archivos',
+    thName: 'Nombre',
+    thSize: 'Tamaño',
+    thStatus: 'Estado',
+    noFiles: 'Aún no hay archivos',
+    addFiles: 'Agregar archivos',
+    removeSelected: 'Quitar seleccionados',
+    destLabel: 'Carpeta de destino',
+    browse: 'Explorar',
+    open: 'Abrir',
+    openTitle: 'Abrir la carpeta de destino',
+    ocrLabel: 'OCR',
+    ocrTitle: 'Extraer texto de imágenes y documentos escaneados',
+    ocrBackendLabel: 'Motor',
+    ocrLangLabel: 'Idiomas',
+    noBackends: 'No hay motores OCR disponibles',
+    converting: 'Convirtiendo a Markdown',
+    converted: 'convertidos',
+    errors: 'errores',
+    batchDoneOk: 'Listo: {ok} archivos convertidos, {err} errores.',
+    convertBtn: 'Convertir a Markdown',
+    statusPending: 'Pendiente',
+    statusConverting: 'Convirtiendo',
+    statusOk: 'Convertido',
+    statusError: 'Error',
+    stErrPrefix: 'Motor:',
+    backendError: 'El motor no pudo iniciarse: {msg}',
+    backendExited: 'El proceso del motor terminó (código {code}).',
+    backendRestart: 'El motor se detuvo inesperadamente. Revisa la instalación.',
+    destMissing: 'La carpeta de destino no existe.',
+    destAuto: 'Se usó la carpeta de origen como destino.',
+    langChanged: 'Idioma: {lang}',
+    httpHint: '',
+  },
+};
+
+function t(key, vars) {
+  let s = I18N[state.lang][key] ?? I18N.en[key] ?? key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      s = s.replaceAll('{' + k + '}', String(v));
+    }
+  }
+  return s;
+}

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" charset="UTF-8">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <title>MarkItDown UI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13 9h5.5L13 3.5V9zM12 2v8h8v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h6z"
+              fill="currentColor"/>
+      </svg>
+      <span class="brand-name">MarkItDown UI</span>
+      <span class="brand-ver" id="app-version"></span>
+    </div>
+    <div class="lang-switch" role="group" aria-label="language">
+      <button id="lang-en" class="lang-btn" data-lang="en">EN</button>
+      <button id="lang-es" class="lang-btn" data-lang="es">ES</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div id="toast" class="toast" hidden></div>
+
+    <section id="drop-zone" class="drop-zone" tabindex="0"
+             aria-label="drop files here or click to add">
+      <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M11 15h2V9h3l-4-5-4 5h3v6zM6 20h12a2 2 0 0 0 2-2v-6h-2v6H6v-6H4v6a2 2 0 0 0 2 2z"
+              fill="currentColor"/>
+      </svg>
+      <p class="drop-text" id="drop-text"></p>
+      <p class="drop-hint" id="drop-hint"></p>
+    </section>
+
+    <section class="file-section">
+      <div class="file-section-head">
+        <span class="section-title" id="files-title"></span>
+        <span class="file-count" id="file-count"></span>
+        <button id="remove-selected" class="btn btn-ghost" hidden></button>
+      </div>
+      <div class="file-list-wrap">
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th class="col-check"></th>
+              <th class="col-name" id="th-name"></th>
+              <th class="col-size" id="th-size"></th>
+              <th class="col-status" id="th-status"></th>
+            </tr>
+          </thead>
+          <tbody id="file-tbody"></tbody>
+        </table>
+        <div class="file-list-empty" id="file-empty" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="ctl-row">
+      <div class="ctl-group">
+        <label class="ctl-label" for="dest-input" id="dest-label"></label>
+        <div class="dest-input-row">
+          <input id="dest-input" type="text" spellcheck="false" readonly>
+          <button id="dest-browse" class="btn btn-ghost"></button>
+          <button id="dest-open" class="btn btn-ghost" title="" disabled></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctl-row">
+      <div class="ctl-group ocr-group">
+        <label class="switch" title="">
+          <input id="ocr-toggle" type="checkbox" checked>
+          <span class="switch-track"></span>
+          <span class="ctl-label ocr-label" id="ocr-label"></span>
+        </label>
+        <div class="ocr-controls" id="ocr-controls">
+          <label class="ctl-label" for="ocr-backend" id="ocr-backend-label"></label>
+          <select id="ocr-backend"></select>
+          <label class="ctl-label" for="ocr-lang" id="ocr-lang-label"></label>
+          <input id="ocr-lang" type="text" spellcheck="false">
+        </div>
+      </div>
+      <div class="convert-group">
+        <div class="progress-wrap" id="progress-wrap" hidden>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <span class="progress-pct" id="progress-pct">0%</span>
+        </div>
+        <span class="status-line" id="status-line"></span>
+        <button id="convert-btn" class="btn btn-primary"></button>
+      </div>
+    </div>
+  </footer>
+
+  <script src="i18n.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

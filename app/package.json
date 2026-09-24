@@ -1,0 +1,57 @@
+{
+  "name": "markitdown-ui",
+  "version": "2.0.0",
+  "description": "Offline file-to-Markdown converter with OCR",
+  "main": "main.js",
+  "author": "Yamith Romero",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.yamithr.markitdown-ui",
+    "productName": "MarkItDown UI",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../assets/easyocr_models",
+        "to": "easyocr_models",
+        "filter": ["**/*"]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["deb", "AppImage"],
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
