@@ -26,6 +26,10 @@ import threading
 import time
 from pathlib import Path
 
+from .ocr_backends import _set_omp_env
+
+_set_omp_env()
+
 from markitdown import MarkItDown
 
 from .cli import _collect_files, _detect_system_langs, SUPPORTED_EXTS
@@ -61,7 +65,7 @@ class BackendServer:
         try:
             _emit({"type": "ack", "id": rid})
             if cmd == "ping":
-                _emit({"type": "pong", "id": rid, "version": "2.0.2"})
+                _emit({"type": "pong", "id": rid, "version": "2.0.3"})
             elif cmd == "list_backends":
                 ocr = self._get_ocr(req)
                 _emit({
@@ -86,15 +90,18 @@ class BackendServer:
         ocr = self._get_ocr(req)
         ocr_cfg = req.get("ocr") or {}
         ocr_enabled = bool(ocr_cfg.get("enabled", True))
-        if ocr_enabled and self._batch_may_need_ocr(req):
-            _emit_log("loading EasyOCR models...")
-            warmed = ocr.warm_up()
-            _emit_log("EasyOCR ready" if warmed else "EasyOCR unavailable - using fallback backend")
         backend_name = req.get("backend")
         if backend_name:
             ocr.set_active(backend_name)
         elif ocr_enabled:
             ocr.auto_select_best()
+        active = ocr.get_active()
+        if (active and ocr_enabled and self._batch_may_need_ocr(req)
+                and active.get_name().startswith("EasyOCR")):
+            _emit_log("loading EasyOCR models...")
+            if not ocr.warm_up():
+                _emit_log("EasyOCR unavailable - using fallback backend")
+                ocr.select_without_easyocr()
         active = ocr.get_active()
         _emit_log("OCR active: " + (active.get_name() if active else "none"))
         return ocr

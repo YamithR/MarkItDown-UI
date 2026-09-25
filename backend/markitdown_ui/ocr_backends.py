@@ -1,8 +1,31 @@
 from abc import ABC, abstractmethod
 import importlib.util
+import os
 from pathlib import Path
 from typing import Optional
 import fitz
+
+
+def _set_omp_env() -> None:
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+
+def _confine_openmp_threads() -> None:
+    _set_omp_env()
+    try:
+        import torch
+        torch.set_num_threads(1)
+    except Exception:
+        pass
+    try:
+        import cv2
+        cv2.setNumThreads(0)
+    except Exception:
+        pass
 
 
 class OCRBackend(ABC):
@@ -47,6 +70,7 @@ class EasyOCRBackend(OCRBackend):
 
     def _get_reader(self):
         if self._reader is None:
+            _confine_openmp_threads()
             import easyocr
             kwargs = {'gpu': self._gpu}
             if self._model_dir:
@@ -56,6 +80,8 @@ class EasyOCRBackend(OCRBackend):
         return self._reader
 
     def is_available(self) -> bool:
+        if os.environ.get("MARKITDOWN_SKIP_EASYOCR") == "1":
+            return False
         # NEVER import easyocr here: on Windows (frozen build) importing
         # torch from a secondary thread deadlocks. find_spec() does not
         # execute the module, so it is safe from any thread.

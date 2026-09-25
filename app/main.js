@@ -9,6 +9,9 @@ let backendProc = null;
 let uid = 0;
 const pending = new Map();
 let backendLog = null;
+let quitting = false;
+let backendRestarts = 0;
+let skipEasyOcr = false;
 
 function logBackendLine(text) {
   try {
@@ -21,6 +24,8 @@ function logBackendLine(text) {
 }
 
 function backendCommand() {
+  const extraEnv = {};
+  if (skipEasyOcr) extraEnv.MARKITDOWN_SKIP_EASYOCR = '1';
   if (app.isPackaged) {
     const exe = process.platform === 'win32' ? 'markitdown-ui-backend.exe' : 'markitdown-ui-backend';
     return {
@@ -28,6 +33,7 @@ function backendCommand() {
       args: [],
       env: {
         ...process.env,
+        ...extraEnv,
         EASYOCR_MODEL_DIR: path.join(process.resourcesPath, 'backend', 'easyocr_models'),
       },
       cwd: process.resourcesPath,
@@ -38,6 +44,7 @@ function backendCommand() {
     args: ['-m', 'markitdown_ui', '--server'],
     env: {
       ...process.env,
+      ...extraEnv,
       PYTHONPATH: path.join(__dirname, '..', 'backend'),
     },
     cwd: path.join(__dirname, '..'),
@@ -80,11 +87,12 @@ function startBackend() {
     if (id != null && terminal && pending.has(id)) {
       pending.get(id).resolve(msg);
       pending.delete(id);
-      if (msg.type === 'pong' || msg.type === 'backends' || msg.type === 'batch_done') {
-        // reply consumed by the awaiting renderer request; batch events were
-        // already forwarded as they streamed in
-        return;
-      }
+if (msg.type === 'pong' || msg.type === 'backends' || msg.type === 'batch_done') {
+      backendRestarts = 0;
+      // reply consumed by the awaiting renderer request; batch events were
+      // already forwarded as they streamed in
+      return;
+    }
     }
     mainWindow?.webContents.send('backend:event', msg);
   });
@@ -110,6 +118,14 @@ function startBackend() {
       code,
     });
     backendProc = null;
+    if (!quitting && backendRestarts < 3) {
+      if (code !== 0) {
+        skipEasyOcr = true;
+        logBackendLine('__BACKEND_RESTART__ skipEasyOcr=true');
+      }
+      backendRestarts += 1;
+      setTimeout(startBackend, 1500);
+    }
   });
   backendProc.on('error', (err) => {
     logBackendLine(`__BACKEND_ERROR__ ${err.message}`);
@@ -177,6 +193,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  quitting = true;
   backendProc?.stdin.end();
   backendProc?.kill();
 });

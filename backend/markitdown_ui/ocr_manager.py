@@ -63,6 +63,16 @@ class OCRManager:
         self._active = available[0]
         return self._active
 
+    def select_without_easyocr(self) -> Optional[OCRBackend]:
+        available = [b for b in self.get_available()
+                     if not isinstance(b, EasyOCRBackend)]
+        if not available:
+            self._active = None
+            return None
+        available.sort(key=lambda b: b.priority(), reverse=True)
+        self._active = available[0]
+        return self._active
+
     def get_available(self) -> List[OCRBackend]:
         if self._available_cache is None:
             self._available_cache = [b for b in self._backends if b.is_available()]
