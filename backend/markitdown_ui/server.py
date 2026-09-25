@@ -61,7 +61,7 @@ class BackendServer:
         try:
             _emit({"type": "ack", "id": rid})
             if cmd == "ping":
-                _emit({"type": "pong", "id": rid, "version": "2.0.0"})
+                _emit({"type": "pong", "id": rid, "version": "2.0.2"})
             elif cmd == "list_backends":
                 ocr = self._get_ocr(req)
                 _emit({
@@ -71,8 +71,9 @@ class BackendServer:
                     "default_langs": _detect_system_langs(),
                 })
             elif cmd == "convert":
+                ocr = self._prepare_ocr(req)
                 thread = threading.Thread(
-                    target=self._convert_batch, args=(rid, req), daemon=True
+                    target=self._convert_batch, args=(rid, req, ocr), daemon=True
                 )
                 thread.start()
                 self._active_batches.append(thread)
@@ -80,6 +81,32 @@ class BackendServer:
                 _emit({"type": "error", "id": rid, "message": f"unknown cmd: {cmd}"})
         except Exception as exc:
             _emit({"type": "error", "id": rid, "message": str(exc)})
+
+    def _prepare_ocr(self, req: dict) -> OCRManager:
+        ocr = self._get_ocr(req)
+        ocr_cfg = req.get("ocr") or {}
+        ocr_enabled = bool(ocr_cfg.get("enabled", True))
+        if ocr_enabled and self._batch_may_need_ocr(req):
+            _emit_log("loading EasyOCR models...")
+            warmed = ocr.warm_up()
+            _emit_log("EasyOCR ready" if warmed else "EasyOCR unavailable - using fallback backend")
+        backend_name = req.get("backend")
+        if backend_name:
+            ocr.set_active(backend_name)
+        elif ocr_enabled:
+            ocr.auto_select_best()
+        active = ocr.get_active()
+        _emit_log("OCR active: " + (active.get_name() if active else "none"))
+        return ocr
+
+    def _batch_may_need_ocr(self, req: dict) -> bool:
+        for p in (req.get("paths") or []):
+            path = Path(p)
+            if path.is_dir():
+                return True
+            if path.suffix.lower() in IMAGE_LIKE or path.suffix.lower() == ".pdf":
+                return True
+        return False
 
     def _get_ocr(self, req: dict) -> OCRManager:
         ocr_cfg = req.get("ocr") or {}
@@ -99,19 +126,10 @@ class BackendServer:
                 _emit_log("OCR backends ready: " + ", ".join(self._ocr.get_all_names()))
             return self._ocr
 
-    def _convert_batch(self, rid: int, req: dict) -> None:
+    def _convert_batch(self, rid: int, req: dict, ocr: OCRManager) -> None:
         try:
-            ocr = self._get_ocr(req)
             ocr_cfg = req.get("ocr") or {}
             ocr_enabled = bool(ocr_cfg.get("enabled", True))
-            backend_name = req.get("backend")
-            if backend_name:
-                ocr.set_active(backend_name)
-            elif ocr_enabled:
-                ocr.auto_select_best()
-            active = ocr.get_active()
-            _emit_log("OCR active: " + (active.get_name() if active else "none"))
-
             paths = req.get("paths") or []
             out_dir = Path(req.get("output") or os.getcwd())
             recursive = bool(req.get("recursive", False))
@@ -131,7 +149,7 @@ class BackendServer:
                     md_out = self._engine.convert(str(f)).markdown
                     if ocr_enabled and self._needs_ocr(f):
                         _emit_log(f"ocr: {f.name}")
-                        md_out = self._apply_ocr(f, md_out, rid)
+                        md_out = self._apply_ocr(f, md_out, ocr)
                     out_path = out_dir / (f.stem + ".md")
                     out_path.parent.mkdir(parents=True, exist_ok=True)
                     out_path.write_text(md_out, encoding="utf-8")
@@ -160,8 +178,7 @@ class BackendServer:
         ext = f.suffix.lower()
         return ext in IMAGE_LIKE or ext == ".pdf"
 
-    def _apply_ocr(self, f: Path, md_out: str, rid: int) -> str:
-        ocr = self._get_ocr({"ocr": {}})
+    def _apply_ocr(self, f: Path, md_out: str, ocr: OCRManager) -> str:
         active = ocr.get_active()
         if active is None or active.get_name().startswith("MarkItDown"):
             return md_out

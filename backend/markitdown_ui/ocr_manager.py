@@ -13,6 +13,7 @@ class OCRManager:
         self.config = config or {}
         self._backends: List[OCRBackend] = []
         self._active: Optional[OCRBackend] = None
+        self._available_cache: Optional[List[OCRBackend]] = None
         self._init_backends()
 
     def _get_raw_langs(self) -> List[str]:
@@ -63,7 +64,15 @@ class OCRManager:
         return self._active
 
     def get_available(self) -> List[OCRBackend]:
-        return [b for b in self._backends if b.is_available()]
+        if self._available_cache is None:
+            self._available_cache = [b for b in self._backends if b.is_available()]
+        return list(self._available_cache)
+
+    def warm_up(self) -> bool:
+        for b in self._backends:
+            if isinstance(b, EasyOCRBackend):
+                return b.warm()
+        return False
 
     def get_all_names(self) -> List[str]:
         return [b.get_name() for b in self._backends]

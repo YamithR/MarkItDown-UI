@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import importlib.util
 from pathlib import Path
 from typing import Optional
 import fitz
@@ -55,12 +56,12 @@ class EasyOCRBackend(OCRBackend):
         return self._reader
 
     def is_available(self) -> bool:
-        try:
-            import easyocr
-        except ImportError:
+        # NEVER import easyocr here: on Windows (frozen build) importing
+        # torch from a secondary thread deadlocks. find_spec() does not
+        # execute the module, so it is safe from any thread.
+        if importlib.util.find_spec("easyocr") is None:
             return False
         if self._model_dir:
-            from pathlib import Path
             md = Path(self._model_dir)
             if not md.is_dir():
                 return False
@@ -69,6 +70,22 @@ class EasyOCRBackend(OCRBackend):
             if not has_model:
                 return False
         return True
+
+    def warm(self) -> bool:
+        """Pre-load EasyOCR (torch import + model files) on the MAIN thread.
+
+        Call this before the background conversion thread starts so torch
+        gets imported from the main thread (Windows loader-lock safe).
+        """
+        if self._reader is not None:
+            return True
+        if not self.is_available():
+            return False
+        try:
+            self._get_reader()
+            return True
+        except Exception:
+            return False
 
     def get_name(self) -> str:
         return f"EasyOCR ({', '.join(self._languages)})"
