@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       bundle_easyocr:
-        description: "Bundle EasyOCR + torch + pre-downloaded models into packages (default: ON, ~1.5GB larger, OCR works offline out of the box)"
+        description: "Bundle EasyOCR + torch into LINUX packages (default: ON, ~1.5GB larger). Windows always bundles Tesseract portable instead (torch crashes in frozen builds on Windows)"
         type: boolean
         default: true
 
@@ -97,14 +97,21 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pyinstaller "markitdown[all]" PyMuPDF Pillow pytesseract
 
-      - name: Install OCR deps + pre-download models
-        if: github.event.inputs.bundle_easyocr != 'false'
-        env:
-          PYTHONUTF8: "1"
+      # Windows NEVER bundles torch/easyocr: torch segfaults (0xC0000005) in
+      # PyInstaller-frozen builds on Windows (DLL hell: oneDNN/OpenMP JIT vs
+      # loader lock). Bundled Tesseract portable is the offline OCR backend.
+      - name: Download portable Tesseract (7-Zip)
+        shell: bash
         run: |
-          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install easyocr
-          python -c "import easyocr; easyocr.Reader(['en','es'], gpu=False, model_storage_directory='assets/easyocr_models', download_enabled=True)"
+          mkdir -p assets/tesseract
+          curl -L -o /tmp/tesseract-setup.exe https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe
+          "/c/Program Files/7-Zip/7z.exe" x /tmp/tesseract-setup.exe -oassets/tesseract -y > /dev/null
+          # installer only ships eng+osd by default -> add es (spa) traineddata
+          mkdir -p assets/tesseract/tessdata
+          curl -L -o assets/tesseract/tessdata/spa.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/spa.traineddata
+          curl -L -o assets/tesseract/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
+          ls assets/tesseract | head -20
+          test -f assets/tesseract/tesseract.exe && echo "TESSERACT OK"
 
       - name: Build backend (onedir)
         run: python -m PyInstaller --noconfirm --clean --distpath backend/dist --workpath backend/build backend/backend.spec

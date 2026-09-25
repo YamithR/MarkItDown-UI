@@ -28,14 +28,20 @@ function backendCommand() {
   if (skipEasyOcr) extraEnv.MARKITDOWN_SKIP_EASYOCR = '1';
   if (app.isPackaged) {
     const exe = process.platform === 'win32' ? 'markitdown-ui-backend.exe' : 'markitdown-ui-backend';
+    const env = {
+      ...process.env,
+      ...extraEnv,
+      EASYOCR_MODEL_DIR: path.join(process.resourcesPath, 'backend', 'easyocr_models'),
+    };
+    // Bundled portable Tesseract (Windows only; Linux uses system tesseract)
+    if (process.platform === 'win32') {
+      env.TESSERACT_CMD = path.join(process.resourcesPath, 'tesseract', 'tesseract.exe');
+      env.TESSDATA_PREFIX = path.join(process.resourcesPath, 'tesseract', 'tessdata');
+    }
     return {
       cmd: path.join(process.resourcesPath, 'backend', exe),
       args: [],
-      env: {
-        ...process.env,
-        ...extraEnv,
-        EASYOCR_MODEL_DIR: path.join(process.resourcesPath, 'backend', 'easyocr_models'),
-      },
+      env,
       cwd: process.resourcesPath,
     };
   }

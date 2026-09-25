@@ -1,6 +1,6 @@
 {
   "name": "markitdown-ui",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Offline file-to-Markdown converter with OCR",
   "homepage": "https://github.com/YamithR/MarkItDown-UI",
   "repository": {
@@ -25,7 +25,9 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!assets/tesseract/**",
+      "!assets/easyocr_models/**"
     ],
     "extraResources": [
       {
@@ -47,7 +49,14 @@
         { "target": "nsis", "arch": ["x64"] },
         { "target": "portable", "arch": ["x64"] }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "../assets/tesseract",
+          "to": "tesseract",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "linux": {
       "target": ["deb", "AppImage"],

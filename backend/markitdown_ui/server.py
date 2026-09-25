@@ -65,7 +65,7 @@ class BackendServer:
         try:
             _emit({"type": "ack", "id": rid})
             if cmd == "ping":
-                _emit({"type": "pong", "id": rid, "version": "2.0.4"})
+                _emit({"type": "pong", "id": rid, "version": "2.0.5"})
             elif cmd == "list_backends":
                 ocr = self._get_ocr(req)
                 _emit({
@@ -125,6 +125,9 @@ class BackendServer:
         model_dir = os.environ.get("EASYOCR_MODEL_DIR")
         if model_dir:
             config["easyocr_model_dir"] = model_dir
+        tesseract_cmd = os.environ.get("TESSERACT_CMD")
+        if tesseract_cmd:
+            config["tesseract_cmd"] = tesseract_cmd
         with self._lock:
             if self._ocr is None or self._ocr_config != config:
                 _emit_log(f"initializing OCR backends (langs={langs})...")
