@@ -19,6 +19,12 @@ def _confine_openmp_threads() -> None:
     try:
         import torch
         torch.set_num_threads(1)
+        # Disable fused/parallel CPU kernels: oneDNN (MKLDNN) JIT and torch's
+        # OpenMP engine segfault (0xC0000005) inside PyInstaller-frozen builds
+        # on Windows during model inference. Fall back to plain serial kernels.
+        torch.backends.mkldnn.enabled = False
+        torch.backends.openmp.enabled = False
+        torch.backends.mkl.enabled = False
     except Exception:
         pass
     try:

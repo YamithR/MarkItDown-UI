@@ -65,7 +65,7 @@ class BackendServer:
         try:
             _emit({"type": "ack", "id": rid})
             if cmd == "ping":
-                _emit({"type": "pong", "id": rid, "version": "2.0.3"})
+                _emit({"type": "pong", "id": rid, "version": "2.0.4"})
             elif cmd == "list_backends":
                 ocr = self._get_ocr(req)
                 _emit({
